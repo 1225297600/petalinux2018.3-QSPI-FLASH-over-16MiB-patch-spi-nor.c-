@@ -1,0 +1,84 @@
+diff --git a/drivers/mtd/spi-nor/spi-nor.c b/drivers/mtd/spi-nor/spi-nor.c
+index 4216ce0df0c5..cb2513a485d0 100644
+--- a/drivers/mtd/spi-nor/spi-nor.c
++++ b/drivers/mtd/spi-nor/spi-nor.c
+@@ -332,6 +332,7 @@ static int read_ear(struct spi_nor *nor, struct flash_info *info)
+ 	/* This is actually Micron */
+ 	else if (JEDEC_MFR(info) == CFI_MFR_ST ||
+ 		 JEDEC_MFR(info) == CFI_MFR_MACRONIX ||
++		 JEDEC_MFR(info) == SNOR_MFR_WINBOND || //zzl 2025-8-20
+ 		 JEDEC_MFR(info) == CFI_MFR_ISSI)
+ 		code = SPINOR_OP_RDEAR;
+ 	else
+@@ -498,6 +499,7 @@ static int write_ear(struct spi_nor *nor, u32 addr)
+ 		code = SPINOR_OP_BRWR;
+ 	if (nor->jedec_id == CFI_MFR_ST ||
+ 	    nor->jedec_id == CFI_MFR_MACRONIX ||
++	    nor->jedec_id == SNOR_MFR_WINBOND || //zzl 2025-8-20
+ 	    nor->jedec_id == CFI_MFR_ISSI) {
+ 		write_enable(nor);
+ 		code = SPINOR_OP_WREAR;
+@@ -1525,9 +1527,12 @@ static const struct flash_info spi_nor_ids[] = {
+ 	{ "w25q80", INFO(0xef5014, 0, 64 * 1024,  16, SECT_4K) },
+ 	{ "w25q80bl", INFO(0xef4014, 0, 64 * 1024,  16, SECT_4K) },
+ 	{ "w25q128", INFO(0xef4018, 0, 64 * 1024, 256, SECT_4K | SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ) },
+-	{ "w25q256", INFO(0xef4019, 0, 64 * 1024, 512, SECT_4K | SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ) },
++	
++	// { "w25q256", INFO(0xef4019, 0, 64 * 1024, 512, SECT_4K | SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ) },
++	{ "w25q256", INFO(0xef4019, 0, 64 * 1024, 512, SECT_4K | SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ | SPI_NOR_4B_OPCODES) },//zzl 2025-8-20
+ 	{ "w25m512jv", INFO(0xef7119, 0, 64 * 1024, 1024,
+-			SECT_4K | SPI_NOR_QUAD_READ | SPI_NOR_DUAL_READ) },
++			// SECT_4K | SPI_NOR_QUAD_READ | SPI_NOR_DUAL_READ) },
++			SECT_4K | SPI_NOR_QUAD_READ | SPI_NOR_DUAL_READ | SPI_NOR_4B_OPCODES) },//zzl 2025-8-20
+ 
+ 	/* Catalyst / On Semiconductor -- non-JEDEC */
+ 	{ "cat25c11", CAT25_INFO(  16, 8, 16, 1, SPI_NOR_NO_ERASE | SPI_NOR_NO_FR) },
+@@ -3245,7 +3250,7 @@ int spi_nor_scan(struct spi_nor *nor, const char *name,
+ 			}
+ 	}
+ #if 0
+-	pr_info("parallel %d stacked %d shift %d mtsize %d\n",
++	dev_info("parallel %d stacked %d shift %d mtsize %d\n",
+ 		nor->isparallel, nor->isstacked, nor->shift, mtd->size);
+ #endif
+ #else
+@@ -3341,8 +3346,15 @@ int spi_nor_scan(struct spi_nor *nor, const char *name,
+ 					     "xlnx,zynq-qspi-1.0") >= 0) {
+ 			int status;
+ 
+-			nor->addr_width = 3;
+-			set_4byte(nor, info, 0);
++			// 原代码：强制3字节模式 zzl 2025-0923
++			// nor->addr_width = 3;
++			// set_4byte(nor, info, 0);
++			
++			// 修改
++			nor->addr_width = 4;
++			set_4byte(nor, info, 1);
++			dev_info(nor->dev, "qspi: Using 4-byte mode for large flash\n");
++
+ 			status = read_ear(nor, info);
+ 			if (status < 0)
+ 				dev_warn(dev, "failed to read ear reg\n");
+@@ -3363,8 +3375,19 @@ int spi_nor_scan(struct spi_nor *nor, const char *name,
+ 				if (of_property_match_string(np_spi,
+ 						"compatible",
+ 						"xlnx,xps-spi-2.00.a") >= 0) {
+-					nor->addr_width = 3;
+-					set_4byte(nor, info, 0);
++					// 原代码：强制3字节模式 zzl 2025-0923
++					// nor->addr_width = 3;
++					// set_4byte(nor, info, 0);
++					
++					// 修改为：根据Flash容量决定
++					// if (mtd->size > 0x1000000) {
++						nor->addr_width = 4;
++						set_4byte(nor, info, 1);
++						dev_info(nor->dev, "xps-spi: Using 4-byte mode for large flash\n");
++					// } else {
++					// 	nor->addr_width = 3;
++					// 	set_4byte(nor, info, 0);
++					// }
+ 				} else {
+ 					set_4byte(nor, info, 1);
+ 					if (nor->isstacked) {
